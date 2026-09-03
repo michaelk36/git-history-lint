@@ -1,0 +1,12 @@
+[package]
+name = "git-history-lint"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "A linter for git commit history"
+
+[[bin]]
+name = "githist-lint"
+path = "src/main.rs"
+
+[dependencies]
