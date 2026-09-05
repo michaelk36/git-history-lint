@@ -61,14 +61,21 @@ so it can be used directly as a CI gate.
 | `subject-too-long`          | subject line longer than 72 characters                |
 | `subject-trailing-period`   | subject line ends with `.`                             |
 | `subject-not-capitalized`   | subject line starts with a lowercase letter            |
+| `subject-not-imperative`    | subject line starts with a likely gerund/past-tense/third-person verb |
 | `body-line-too-long`        | a body line longer than 100 characters                 |
+
+`subject-not-imperative` is a heuristic based on the first word's ending
+(`-ing`, `-ed`, or a trailing `-s` that isn't part of the base word), not
+real grammar. It will miss irregular verbs like "Made" or "Ran" and can
+misfire on merge/revert subjects, which is why those get their own
+handling next.
 
 ## Status
 
 Early skeleton. The rule set above is intentionally small; more rules
-(imperative mood, ticket reference conventions, merge commit handling) are
-easy to add in `src/rules.rs` once the parsing and streaming groundwork is
-solid. No third-party dependencies are used or planned.
+(ticket reference conventions, merge commit handling) are easy to add in
+`src/rules.rs` once the parsing and streaming groundwork is solid. No
+third-party dependencies are used or planned.
 
 ## License
 

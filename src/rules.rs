@@ -9,6 +9,45 @@ pub struct Finding {
 const MAX_SUBJECT_LEN: usize = 72;
 const MAX_BODY_LINE_LEN: usize = 100;
 
+// Base-form verbs that legitimately end in a single "s" and would
+// otherwise be mistaken for a third-person conjugation (e.g. "Fixes").
+const IMPERATIVE_S_EXCEPTIONS: &[&str] = &["focus", "canvas", "bias", "atlas"];
+
+/// Guesses whether a commit subject opens with a non-imperative verb form
+/// and, if so, returns the reason. This is a heuristic based on common
+/// English inflection endings, not real grammatical analysis: it will
+/// miss irregular verbs (e.g. "Made", "Ran") and can be fooled by nouns,
+/// but it catches the vast majority of "Fixed bug" / "Adds feature" /
+/// "Fixing typo" style subjects that style guides tell you to avoid.
+fn non_imperative_reason(subject: &str) -> Option<String> {
+    let token = subject.split_whitespace().next()?;
+    let word = token.trim_matches(|c: char| !c.is_ascii_alphabetic());
+    if word.len() < 3 {
+        return None;
+    }
+    let lower = word.to_lowercase();
+
+    if lower.ends_with("ing") {
+        return Some(format!(
+            "subject starts with \"{word}\", which looks like a gerund; use imperative mood (\"Add\", not \"Adding\")"
+        ));
+    }
+    if lower.ends_with("ed") {
+        return Some(format!(
+            "subject starts with \"{word}\", which looks like past tense; use imperative mood (\"Add\", not \"Added\")"
+        ));
+    }
+    if lower.ends_with('s')
+        && !lower.ends_with("ss")
+        && !IMPERATIVE_S_EXCEPTIONS.contains(&lower.as_str())
+    {
+        return Some(format!(
+            "subject starts with \"{word}\", which looks like third person; use imperative mood (\"Add\", not \"Adds\")"
+        ));
+    }
+    None
+}
+
 pub fn check(commit: &CommitRecord) -> Vec<Finding> {
     let mut findings = Vec::new();
 
@@ -49,6 +88,14 @@ pub fn check(commit: &CommitRecord) -> Vec<Finding> {
                 message: "subject line should start with a capital letter".to_string(),
             });
         }
+    }
+
+    if let Some(reason) = non_imperative_reason(subject) {
+        findings.push(Finding {
+            line: commit.subject_line,
+            rule: "subject-not-imperative",
+            message: reason,
+        });
     }
 
     let mut line = commit.body_start_line;
