@@ -27,13 +27,13 @@ like a comma or a pipe, because those are effectively guaranteed not to show
 up inside a real commit message:
 
 ```
-git log --format='%x1e%H%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%b' | githist-lint
+git log --format='%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%b' | githist-lint
 ```
 
 You can also point it at a file that holds the same format:
 
 ```
-git log --format='%x1e%H%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%b' > history.log
+git log --format='%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%b' > history.log
 githist-lint history.log
 ```
 
@@ -66,14 +66,17 @@ so it can be used directly as a CI gate.
 
 `subject-not-imperative` is a heuristic based on the first word's ending
 (`-ing`, `-ed`, or a trailing `-s` that isn't part of the base word), not
-real grammar. It will miss irregular verbs like "Made" or "Ran" and can
-misfire on merge/revert subjects, which is why those get their own
-handling next.
+real grammar. It will miss irregular verbs like "Made" or "Ran".
+
+Merge commits (detected from `%P` having more than one parent hash) and
+`git revert`'s `Revert "<original subject>"` wrapper are exempt from
+`subject-too-long` and `subject-not-imperative`: that text comes from git
+or a hosting platform, not the author, so flagging it doesn't help anyone.
 
 ## Status
 
 Early skeleton. The rule set above is intentionally small; more rules
-(ticket reference conventions, merge commit handling) are easy to add in
+(ticket reference conventions, configurable thresholds) are easy to add in
 `src/rules.rs` once the parsing and streaming groundwork is solid. No
 third-party dependencies are used or planned.
 

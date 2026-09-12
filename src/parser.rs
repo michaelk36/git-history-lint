@@ -10,11 +10,12 @@ const FIELD_SEP: u8 = 0x1f;
 
 /// The format string this parser expects on stdin:
 ///
-///   git log --format='%x1e%H%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%b'
-pub const EXPECTED_FORMAT: &str = "%x1e%H%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%b";
+///   git log --format='%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%b'
+pub const EXPECTED_FORMAT: &str = "%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%b";
 
 pub struct CommitRecord {
     pub hash: String,
+    pub parent_hashes: Vec<String>,
     pub author_name: String,
     pub author_email: String,
     pub date: String,
@@ -22,6 +23,15 @@ pub struct CommitRecord {
     pub subject_line: usize,
     pub body: String,
     pub body_start_line: usize,
+}
+
+impl CommitRecord {
+    /// A commit with more than one parent is a merge commit. Its subject
+    /// is usually written by git or a hosting platform, not the author,
+    /// so the usual style rules don't apply to it.
+    pub fn is_merge(&self) -> bool {
+        self.parent_hashes.len() > 1
+    }
 }
 
 /// Pulls one commit record at a time off a reader, never holding more
@@ -65,10 +75,14 @@ impl<R: BufRead> CommitStream<R> {
 }
 
 fn parse_record(buf: &[u8], record_start_line: usize) -> CommitRecord {
-    let mut fields = buf.splitn(6, |&b| b == FIELD_SEP);
+    let mut fields = buf.splitn(7, |&b| b == FIELD_SEP);
     let mut next_field = || fields.next().unwrap_or(&[] as &[u8]);
 
     let hash = field_to_string(next_field());
+    let parent_hashes = field_to_string(next_field())
+        .split_whitespace()
+        .map(str::to_string)
+        .collect();
     let author_name = field_to_string(next_field());
     let author_email = field_to_string(next_field());
     let date = field_to_string(next_field());
@@ -84,6 +98,7 @@ fn parse_record(buf: &[u8], record_start_line: usize) -> CommitRecord {
 
     CommitRecord {
         hash,
+        parent_hashes,
         author_name,
         author_email,
         date,

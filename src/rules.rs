@@ -48,6 +48,13 @@ fn non_imperative_reason(subject: &str) -> Option<String> {
     None
 }
 
+/// True for the subject git itself writes on `git revert`, e.g.
+/// `Revert "Add feature"`. These wrap an already-reviewed subject in a
+/// fixed template, so they aren't the author's free-form wording.
+fn is_revert_subject(subject: &str) -> bool {
+    subject.starts_with("Revert \"") && subject.ends_with('"')
+}
+
 pub fn check(commit: &CommitRecord) -> Vec<Finding> {
     let mut findings = Vec::new();
 
@@ -61,8 +68,16 @@ pub fn check(commit: &CommitRecord) -> Vec<Finding> {
         return findings;
     }
 
+    // Merge commit subjects are written by git or by a hosting platform
+    // (e.g. "Merge pull request #123 from org/some-long-branch-name"),
+    // and revert subjects are a fixed wrapper around one that was already
+    // linted when it was first committed. Holding either to the same
+    // length/mood rules as an author-written subject produces findings
+    // nobody can act on.
+    let is_generated = commit.is_merge() || is_revert_subject(subject);
+
     let subject_len = subject.chars().count();
-    if subject_len > MAX_SUBJECT_LEN {
+    if !is_generated && subject_len > MAX_SUBJECT_LEN {
         findings.push(Finding {
             line: commit.subject_line,
             rule: "subject-too-long",
@@ -90,12 +105,14 @@ pub fn check(commit: &CommitRecord) -> Vec<Finding> {
         }
     }
 
-    if let Some(reason) = non_imperative_reason(subject) {
-        findings.push(Finding {
-            line: commit.subject_line,
-            rule: "subject-not-imperative",
-            message: reason,
-        });
+    if !is_generated {
+        if let Some(reason) = non_imperative_reason(subject) {
+            findings.push(Finding {
+                line: commit.subject_line,
+                rule: "subject-not-imperative",
+                message: reason,
+            });
+        }
     }
 
     let mut line = commit.body_start_line;
