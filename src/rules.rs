@@ -1,13 +1,53 @@
+use crate::config::Config;
 use crate::parser::CommitRecord;
+
+/// Identifies a rule for config lookups (`Config::is_enabled`) and for
+/// printing findings. A closed enum, rather than a bare `&'static str`,
+/// so that a typo in a config file's rule name is a compile error away
+/// from being silently ignored.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RuleName {
+    EmptySubject,
+    SubjectTooLong,
+    SubjectTrailingPeriod,
+    SubjectNotCapitalized,
+    SubjectNotImperative,
+    BodyLineTooLong,
+}
+
+impl RuleName {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RuleName::EmptySubject => "empty-subject",
+            RuleName::SubjectTooLong => "subject-too-long",
+            RuleName::SubjectTrailingPeriod => "subject-trailing-period",
+            RuleName::SubjectNotCapitalized => "subject-not-capitalized",
+            RuleName::SubjectNotImperative => "subject-not-imperative",
+            RuleName::BodyLineTooLong => "body-line-too-long",
+        }
+    }
+}
+
+impl std::fmt::Display for RuleName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+pub const RULE_NAMES: &[RuleName] = &[
+    RuleName::EmptySubject,
+    RuleName::SubjectTooLong,
+    RuleName::SubjectTrailingPeriod,
+    RuleName::SubjectNotCapitalized,
+    RuleName::SubjectNotImperative,
+    RuleName::BodyLineTooLong,
+];
 
 pub struct Finding {
     pub line: usize,
-    pub rule: &'static str,
+    pub rule: RuleName,
     pub message: String,
 }
-
-const MAX_SUBJECT_LEN: usize = 72;
-const MAX_BODY_LINE_LEN: usize = 100;
 
 // Base-form verbs that legitimately end in a single "s" and would
 // otherwise be mistaken for a third-person conjugation (e.g. "Fixes").
@@ -55,16 +95,18 @@ fn is_revert_subject(subject: &str) -> bool {
     subject.starts_with("Revert \"") && subject.ends_with('"')
 }
 
-pub fn check(commit: &CommitRecord) -> Vec<Finding> {
+pub fn check(commit: &CommitRecord, config: &Config) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     let subject = commit.subject.trim();
     if subject.is_empty() {
-        findings.push(Finding {
-            line: commit.subject_line,
-            rule: "empty-subject",
-            message: "commit has no subject line".to_string(),
-        });
+        if config.is_enabled(RuleName::EmptySubject) {
+            findings.push(Finding {
+                line: commit.subject_line,
+                rule: RuleName::EmptySubject,
+                message: "commit has no subject line".to_string(),
+            });
+        }
         return findings;
     }
 
@@ -77,57 +119,66 @@ pub fn check(commit: &CommitRecord) -> Vec<Finding> {
     let is_generated = commit.is_merge() || is_revert_subject(subject);
 
     let subject_len = subject.chars().count();
-    if !is_generated && subject_len > MAX_SUBJECT_LEN {
+    if !is_generated
+        && config.is_enabled(RuleName::SubjectTooLong)
+        && subject_len > config.max_subject_len
+    {
         findings.push(Finding {
             line: commit.subject_line,
-            rule: "subject-too-long",
+            rule: RuleName::SubjectTooLong,
             message: format!(
-                "subject is {subject_len} characters, keep it under {MAX_SUBJECT_LEN}"
+                "subject is {subject_len} characters, keep it under {}",
+                config.max_subject_len
             ),
         });
     }
 
-    if subject.ends_with('.') {
+    if config.is_enabled(RuleName::SubjectTrailingPeriod) && subject.ends_with('.') {
         findings.push(Finding {
             line: commit.subject_line,
-            rule: "subject-trailing-period",
+            rule: RuleName::SubjectTrailingPeriod,
             message: "subject line should not end with a period".to_string(),
         });
     }
 
-    if let Some(first) = subject.chars().next() {
-        if first.is_lowercase() {
-            findings.push(Finding {
-                line: commit.subject_line,
-                rule: "subject-not-capitalized",
-                message: "subject line should start with a capital letter".to_string(),
-            });
+    if config.is_enabled(RuleName::SubjectNotCapitalized) {
+        if let Some(first) = subject.chars().next() {
+            if first.is_lowercase() {
+                findings.push(Finding {
+                    line: commit.subject_line,
+                    rule: RuleName::SubjectNotCapitalized,
+                    message: "subject line should start with a capital letter".to_string(),
+                });
+            }
         }
     }
 
-    if !is_generated {
+    if !is_generated && config.is_enabled(RuleName::SubjectNotImperative) {
         if let Some(reason) = non_imperative_reason(subject) {
             findings.push(Finding {
                 line: commit.subject_line,
-                rule: "subject-not-imperative",
+                rule: RuleName::SubjectNotImperative,
                 message: reason,
             });
         }
     }
 
-    let mut line = commit.body_start_line;
-    for body_line in commit.body.split('\n') {
-        let len = body_line.chars().count();
-        if len > MAX_BODY_LINE_LEN {
-            findings.push(Finding {
-                line,
-                rule: "body-line-too-long",
-                message: format!(
-                    "body line is {len} characters, keep it under {MAX_BODY_LINE_LEN}"
-                ),
-            });
+    if config.is_enabled(RuleName::BodyLineTooLong) {
+        let mut line = commit.body_start_line;
+        for body_line in commit.body.split('\n') {
+            let len = body_line.chars().count();
+            if len > config.max_body_line_len {
+                findings.push(Finding {
+                    line,
+                    rule: RuleName::BodyLineTooLong,
+                    message: format!(
+                        "body line is {len} characters, keep it under {}",
+                        config.max_body_line_len
+                    ),
+                });
+            }
+            line += 1;
         }
-        line += 1;
     }
 
     findings

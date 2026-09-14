@@ -73,11 +73,31 @@ Merge commits (detected from `%P` having more than one parent hash) and
 `subject-too-long` and `subject-not-imperative`: that text comes from git
 or a hosting platform, not the author, so flagging it doesn't help anyone.
 
+## Config
+
+If a `.githist-lint.toml` file exists in the current directory, it's read
+for per-rule thresholds and enable/disable settings. Each line is a dotted
+`rule-name.field = value` assignment (a small, hand-parsed subset of real
+TOML — comments start with `#`, blank lines are ignored):
+
+```
+subject-too-long.max = 100
+body-line-too-long.max = 120
+subject-not-imperative.enabled = false
+```
+
+`max` is only valid on `subject-too-long` and `body-line-too-long`.
+`enabled` is valid on any rule. An unknown rule name, an unknown field, or
+a value that doesn't parse is an error rather than being ignored, so a
+typo in the config doesn't quietly turn off a rule. With no config file
+present, the defaults are a 72-character subject limit and a
+100-character body line limit, with every rule enabled.
+
 ## Status
 
 Early skeleton. The rule set above is intentionally small; more rules
-(ticket reference conventions, configurable thresholds) are easy to add in
-`src/rules.rs` once the parsing and streaming groundwork is solid. No
+(ticket reference conventions, for example) are easy to add in
+`src/rules.rs` now that parsing, streaming, and config are in place. No
 third-party dependencies are used or planned.
 
 ## License

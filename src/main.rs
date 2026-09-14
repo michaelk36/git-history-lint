@@ -1,3 +1,4 @@
+mod config;
 mod parser;
 mod rules;
 
@@ -5,6 +6,8 @@ use std::env;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::process::ExitCode;
+
+use config::{Config, DEFAULT_CONFIG_FILE};
 
 fn usage() -> String {
     format!(
@@ -21,7 +24,13 @@ fn usage() -> String {
          \x20   <commit> <line>: [<rule>] <message>\n\
          \n\
          Input is streamed one commit record at a time, so history of any\n\
-         length can be linted without loading it all into memory.\n",
+         length can be linted without loading it all into memory.\n\
+         \n\
+         If a {DEFAULT_CONFIG_FILE} file exists in the current directory,\n\
+         it is read for rule thresholds and enable/disable settings, e.g.\n\
+         \n\
+         \x20   subject-too-long.max = 100\n\
+         \x20   subject-not-imperative.enabled = false\n",
         parser::EXPECTED_FORMAT
     )
 }
@@ -33,9 +42,19 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    let config = match Config::load_default() {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("githist-lint: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
     let outcome = match args.first() {
-        Some(path) => File::open(path).map(BufReader::new).and_then(run),
-        None => run(io::stdin().lock()),
+        Some(path) => File::open(path)
+            .map(BufReader::new)
+            .and_then(|r| run(r, &config)),
+        None => run(io::stdin().lock(), &config),
     };
 
     match outcome {
@@ -48,12 +67,12 @@ fn main() -> ExitCode {
     }
 }
 
-fn run<R: BufRead>(reader: R) -> io::Result<usize> {
+fn run<R: BufRead>(reader: R, config: &Config) -> io::Result<usize> {
     let mut stream = parser::CommitStream::new(reader);
     let mut finding_count = 0;
 
     while let Some(commit) = stream.next_commit()? {
-        for finding in rules::check(&commit) {
+        for finding in rules::check(&commit, config) {
             println!(
                 "{} {}: [{}] {}",
                 short_hash(&commit.hash),
