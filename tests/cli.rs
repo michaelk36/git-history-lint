@@ -213,6 +213,47 @@ fn config_file_overrides_threshold_and_disables_rule() {
 }
 
 #[test]
+fn git_flag_runs_git_log_itself() {
+    let dir = temp_dir("git-flag");
+    let git = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(&dir)
+            .status()
+            .expect("failed to run git");
+        assert!(status.success(), "git {args:?} failed");
+    };
+
+    git(&["init", "--quiet"]);
+    git(&["config", "user.name", "Author Name"]);
+    git(&["config", "user.email", "author@example.com"]);
+    git(&["commit", "--quiet", "--allow-empty", "-m", "fix bug."]);
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_githist-lint"))
+        .arg("--git")
+        .current_dir(&dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to start githist-lint binary");
+    let output = child.wait_with_output().expect("failed to wait on child");
+    let stdout = String::from_utf8(output.stdout).expect("stdout was not utf-8");
+    let stderr = String::from_utf8(output.stderr).expect("stderr was not utf-8");
+
+    assert!(!output.status.success(), "stderr: {stderr}");
+    assert!(
+        stdout.contains("[subject-trailing-period]"),
+        "stdout was: {stdout}"
+    );
+    assert!(
+        stdout.contains("[subject-not-capitalized]"),
+        "stdout was: {stdout}"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn invalid_config_file_is_reported_as_an_error() {
     let dir = temp_dir("config-invalid");
     fs::write(dir.join(".githist-lint.toml"), "nonsense-rule.max = 5\n")

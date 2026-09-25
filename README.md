@@ -12,14 +12,15 @@ walls of text. None of that breaks anything, but it makes `git log` and
 `git blame` annoying to read six months later. This is meant to run in CI
 or a pre-push hook so that drift gets caught instead of accumulating.
 
-## Why it reads from a pipe instead of shelling out to git itself
+## Why it reads a stream instead of walking `.git` itself
 
-The tool never calls `git` itself and never touches `.git`. Instead it reads
-commit records from stdin in a format you produce with `git log`. That
+The tool doesn't parse `.git` or use any git internals directly; even
+`--git` just spawns the real `git log` binary and reads its stdout. That
 keeps the tool honest about memory: it processes one record at a time and
 never buffers the whole history, so it works the same on a 50-commit repo
-and a 500,000-commit one. It also means it works on any input that looks
-like git log output, including a saved file, which is useful for testing.
+and a 500,000-commit one. It also means the same parsing and rule code
+works on any input that looks like git log output, including a saved file,
+which is useful for testing.
 
 The expected format uses two ASCII control characters (the record and unit
 separators, `0x1e` and `0x1f`) as delimiters instead of something visible
@@ -35,6 +36,18 @@ You can also point it at a file that holds the same format:
 ```
 git log --format='%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%b' > history.log
 githist-lint history.log
+```
+
+Typing that format string out isn't something anyone wants to do twice, so
+`--git` runs it for you: it shells out to `git log` in the current directory
+with the right `--format` filled in and streams its stdout the same way a
+pipe would. Anything after `--git` is passed straight through to `git log`,
+so revision ranges and the usual filters work as-is:
+
+```
+githist-lint --git
+githist-lint --git origin/main..HEAD
+githist-lint --git --since=2024-01-01 --author=jane
 ```
 
 ## Output
